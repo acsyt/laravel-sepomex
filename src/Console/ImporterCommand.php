@@ -4,125 +4,182 @@ namespace Wafto\Sepomex\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Wafto\Sepomex\Models\Sepomex;
 use Wafto\Sepomex\Support\DelimitedFileIterator;
+use Wafto\Sepomex\Support\SepomexCache;
+use Wafto\Sepomex\Support\SettlementKey;
 
-/**
- * Class ImporterCommand.
- */
-class ImporterCommand extends Command
-{
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
+class ImporterCommand extends Command {
     protected $signature = 'sepomex:import {--chunk=50}';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
     protected $description = 'Imports sepomex data from the txt file provided by "Correos de México".';
 
-    /**
-     * Truncate database data.
-     *
-     * @return void
-     */
-    protected function truncateTable(Sepomex $model)
-    {
-        $this->comment('Truncating table...');
-        $model->truncate();
-        $this->info('Table truncated.');
-    }
+    private const EXPECTED_HEADERS = [
+        'd_codigo',
+        'd_asenta',
+        'd_tipo_asenta',
+        'D_mnpio',
+        'd_estado',
+        'd_ciudad',
+        'd_CP',
+        'c_estado',
+        'c_oficina',
+        'c_CP',
+        'c_tipo_asenta',
+        'c_mnpio',
+        'id_asenta_cpcons',
+        'd_zona',
+        'c_cve_ciudad',
+    ];
 
-    /**
-     * Start importing and return the inserted rows count.
-     *
-     * @param  \Wafto\Sepomex\Models\Sepomex  $model
-     * @param  \Wafto\Sepomex\Support\DelimitedFileIterator  $iterator
-     * @param  int  $lines
-     * @return int
-     */
-    protected function startImport($model, $iterator, $lines)
-    {
-        $this->comment(sprintf('Parsing [%s] rows from file...', $lines));
+    private const UPSERT_COLUMNS = [
+        'd_codigo',
+        'd_asenta',
+        'd_tipo_asenta',
+        'D_mnpio',
+        'd_estado',
+        'd_ciudad',
+        'd_CP',
+        'c_estado',
+        'c_oficina',
+        'c_CP',
+        'c_tipo_asenta',
+        'c_mnpio',
+        'id_asenta_cpcons',
+        'd_zona',
+        'c_cve_ciudad',
+        'sync_token',
+        'is_active',
+    ];
 
-        $chunk = intval($this->option('chunk'));
-        $bar = $this->output->createProgressBar($lines);
-        $accumulator = [];
-        $inserted = 0;
-
-        foreach ($iterator as $row) {
-            $accumulator[] = $row;
-
-            // Insert when chunk size is reached
-            if (count($accumulator) >= $chunk) {
-                $count = count($accumulator);
-                $model->insert($accumulator);
-                $bar->advance($count);
-                $inserted += $count;
-                $accumulator = [];
-            }
-        }
-
-        // Insert remaining rows
-        if (count($accumulator) > 0) {
-            $count = count($accumulator);
-            $model->insert($accumulator);
-            $bar->advance($count);
-            $inserted += $count;
-        }
-
-        $bar->finish();
-
-        return $inserted;
-    }
-
-    /**
-     * Execute the console command.
-     *
-     * @return void
-     */
-    public function handle(Sepomex $model)
-    {
+    public function handle(Sepomex $model): int {
         try {
-            $filePath = config('sepomex.source_file');
-            $inputEncoding = config('sepomex.encoding_input');
-            $outputEncoding = config('sepomex.encoding_output');
-
-            // Create iterator, skipping first line (usage & restrictions)
             $iterator = new DelimitedFileIterator(
-                $filePath,
+                config('sepomex.source_file'),
                 '|',
-                $inputEncoding,
-                $outputEncoding,
+                config('sepomex.encoding_input'),
+                config('sepomex.encoding_output'),
                 1
             );
-
-            // Read headers from second line
             $iterator->readHeaders();
+            $this->assertHeaders($iterator->getHeaders() ?? []);
 
-            // Count lines (excluding header and first line)
-            $lines = $iterator->countLines() - 1;
+            $syncToken = (string) Str::uuid();
+            $chunkSize = max(1, (int) $this->option('chunk'));
+            $lines = max(0, $iterator->countLines() - 1);
+            $this->comment(sprintf('Parsing [%s] rows from file...', $lines));
 
-            $this->truncateTable($model);
+            $imported = $this->importRows($model, $iterator, $syncToken, $chunkSize, $lines);
+            $this->deactivateMissing($model, $syncToken);
+            (new SepomexCache(Cache::driver()))->flush();
 
-            // Starting import.
-            $inserted = $this->startImport($model, $iterator, $lines);
-
-            $info = sprintf("Inserted [%s] rows from [%s] file lines in %s table.\n", $inserted, $lines, $model->getTable());
-
-            $this->info($info);
-
-            Cache::tags(['sepomex'])->flush();
+            $this->info(sprintf(
+                "Imported [%s] rows from [%s] file lines in %s table.\n",
+                $imported,
+                $lines,
+                $model->getTable()
+            ));
             $this->info('Cache cleared.');
+
+            return 0;
         } catch (\Exception $e) {
             $this->error($e->getMessage());
 
             return 1;
         }
+    }
+
+    private function importRows(
+        Sepomex $model,
+        DelimitedFileIterator $iterator,
+        string $syncToken,
+        int $chunkSize,
+        int $lines
+    ): int {
+        $bar = $this->output->createProgressBar($lines);
+        $accumulator = [];
+        $seen = [];
+        $imported = 0;
+
+        foreach ($iterator as $row) {
+            $payload = $this->mapRow($row, $syncToken, $seen);
+            $accumulator[] = $payload;
+
+            if (count($accumulator) >= $chunkSize) {
+                $imported += $this->upsertChunk($model, $accumulator);
+                $bar->advance(count($accumulator));
+                $accumulator = [];
+            }
+        }
+
+        if (count($accumulator) > 0) {
+            $imported += $this->upsertChunk($model, $accumulator);
+            $bar->advance(count($accumulator));
+        }
+
+        $bar->finish();
+
+        return $imported;
+    }
+
+    private function mapRow(mixed $row, string $syncToken, array &$seen): array {
+        if (! is_array($row) || array_is_list($row))
+            throw new InvalidArgumentException('SEPOMEX source row is malformed.');
+
+        foreach (self::EXPECTED_HEADERS as $header) {
+            if (! array_key_exists($header, $row))
+                throw new InvalidArgumentException('SEPOMEX source row is missing required columns.');
+        }
+
+        $key = SettlementKey::fromRow($row);
+        if (isset($seen[$key]))
+            throw new InvalidArgumentException(sprintf('Duplicate SEPOMEX settlement identity [%s].', $key));
+
+        $seen[$key] = true;
+        [$estado, $municipio, $asenta] = explode('-', $key);
+
+        return [
+            'settlement_key'    => $key,
+            'sync_token'        => $syncToken,
+            'is_active'         => true,
+            'd_codigo'          => $row['d_codigo'],
+            'd_asenta'          => $row['d_asenta'],
+            'd_tipo_asenta'     => $row['d_tipo_asenta'],
+            'D_mnpio'           => $row['D_mnpio'],
+            'd_estado'          => $row['d_estado'],
+            'd_ciudad'          => $row['d_ciudad'],
+            'd_CP'              => $row['d_CP'],
+            'c_estado'          => $estado,
+            'c_oficina'         => $row['c_oficina'],
+            'c_CP'              => $row['c_CP'],
+            'c_tipo_asenta'     => $row['c_tipo_asenta'],
+            'c_mnpio'           => $municipio,
+            'id_asenta_cpcons'  => $asenta,
+            'd_zona'            => $row['d_zona'],
+            'c_cve_ciudad'      => $row['c_cve_ciudad'],
+        ];
+    }
+
+    private function upsertChunk(Sepomex $model, array $rows): int {
+        DB::transaction(function () use ($model, $rows) {
+            $model->upsert($rows, ['settlement_key'], self::UPSERT_COLUMNS);
+        });
+
+        return count($rows);
+    }
+
+    private function deactivateMissing(Sepomex $model, string $syncToken): void {
+        $model->newQuery()
+            ->where('sync_token', '!=', $syncToken)
+            ->where('is_active', true)
+            ->update(['is_active' => false]);
+    }
+
+    private function assertHeaders(array $headers): void {
+        if ($headers !== self::EXPECTED_HEADERS)
+            throw new InvalidArgumentException('SEPOMEX source file has an invalid header.');
     }
 }

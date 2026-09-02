@@ -10,44 +10,24 @@ use Wafto\Sepomex\Models\Sepomex;
 use Wafto\Sepomex\Repositories\CachedRepository;
 use Wafto\Sepomex\Repositories\DatabaseRepository;
 
-/**
- * Class SepomexServiceProvider.
- */
-class SepomexServiceProvider extends ServiceProvider
-{
-    /**
-     * Bootstrap the application services.
-     *
-     * @return void
-     */
-    public function boot()
-    {
-        if ($this->app->runningInConsole()) {
-            $configPath = __DIR__.'/../config/sepomex.php';
+class SepomexServiceProvider extends ServiceProvider {
+    public function boot(): void {
+        $configPath = __DIR__.'/../config/sepomex.php';
+        $this->publishes([$configPath => config_path('sepomex.php')], 'sepomex');
+        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
 
-            $this->publishes([$configPath => config_path('sepomex.php')], 'sepomex');
-
-            $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
-
-            $this->commands([
-                ImporterCommand::class,
-            ]);
-        }
+        if ($this->app->runningInConsole())
+            $this->commands([ImporterCommand::class]);
     }
 
-    /**
-     * Register the application services.
-     *
-     * @return void
-     */
-    public function register()
-    {
-        $configPath = __DIR__.'/../config/sepomex.php';
-
-        $this->mergeConfigFrom($configPath, 'sepomex');
+    public function register(): void {
+        $this->mergeConfigFrom(__DIR__.'/../config/sepomex.php', 'sepomex');
 
         $this->app->singleton(SepomexContract::class, function ($app) {
-            return new CachedRepository(new DatabaseRepository(new Sepomex), $app[CacheRepository::class]);
+            return new CachedRepository(
+                new DatabaseRepository(new Sepomex),
+                $app[CacheRepository::class]
+            );
         });
     }
 }

@@ -3,42 +3,38 @@
 namespace Wafto\Sepomex\Repositories;
 
 use Wafto\Sepomex\Contracts\SepomexContract;
+use Wafto\Sepomex\Entities\Settlement;
 use Wafto\Sepomex\Entities\State;
 use Wafto\Sepomex\Models\Sepomex;
 
-/**
- * Class DatabaseRepository.
- */
-class DatabaseRepository implements SepomexContract
-{
-    public function __construct(
-        protected Sepomex $model
-    ) {}
+class DatabaseRepository implements SepomexContract {
+    public function __construct(protected Sepomex $model) {}
 
-    /**
-     * {@inheritdoc}
-     */
-    public function getByPostal(string $postal): array
-    {
-        return $this->model->postalCode($postal)
+    public function getByPostal(string $postal): array {
+        return $this->model->active()
+            ->postalCode($postal)
             ->get()
-            ->map(function (Sepomex $item) {
-                return $item->toEntity();
-            })
+            ->map(fn (Sepomex $item) => $item->toEntity()->toArray())
+            ->all();
+    }
+
+    public function getStates(): array {
+        return $this->model->active()
+            ->select(['c_estado', 'd_estado'])
+            ->distinct()
+            ->get()
+            ->map(fn ($row) => new State((int) $row->c_estado, $row->d_estado))
             ->toArray();
     }
 
-    /**
-     * {@inheritdoc}
-     */
-    public function getStates(): array
-    {
-        return $this->model->select(['c_estado', 'd_estado'])
-            ->distinct()
-            ->get()
-            ->map(function ($row) {
-                return new State($row->c_estado, $row->d_estado);
-            })
-            ->toArray();
+    public function findSettlement(string $settlementKey): ?Settlement {
+        $row = $this->model->newQuery()
+            ->where('settlement_key', $settlementKey)
+            ->first();
+
+        if ($row === null)
+            return null;
+
+        return $row->toEntity();
     }
 }

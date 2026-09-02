@@ -1,0 +1,3 @@
+Restrictive clause line (This file is used only for testing purposes)
+foo|bar
+01000|x

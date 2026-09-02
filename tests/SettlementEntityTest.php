@@ -38,5 +38,13 @@ it('converts to array', function () {
     $settlement->setDistrict($district);
     $settlement->setLocation($location);
 
-    expect($settlement->toArray())->toHaveKeys(['state', 'city', 'district', 'location']);
+    expect($settlement->toArray())->toHaveKeys([
+        'postal',
+        'settlement_key',
+        'active',
+        'state',
+        'city',
+        'district',
+        'location',
+    ]);
 });

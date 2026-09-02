@@ -4,52 +4,34 @@ namespace Wafto\Sepomex\Repositories;
 
 use Illuminate\Contracts\Cache\Repository;
 use Wafto\Sepomex\Contracts\SepomexContract;
+use Wafto\Sepomex\Entities\Settlement;
+use Wafto\Sepomex\Support\SepomexCache;
 
-/**
- * Class CachedRepository.
- */
-class CachedRepository implements SepomexContract
-{
-    /**
-     * @var SepomexContract
-     */
-    protected $next;
+class CachedRepository implements SepomexContract {
+    protected SepomexContract $next;
 
-    /**
-     * @var Repository
-     */
-    protected $cache;
+    protected SepomexCache $cache;
 
-    /**
-     * CachedRepository constructor.
-     */
-    public function __construct(SepomexContract $next, Repository $cache)
-    {
+    public function __construct(SepomexContract $next, Repository $cache) {
         $this->next = $next;
-        $this->cache = $cache;
+        $this->cache = new SepomexCache($cache);
     }
 
-    /**
-     * {@inheritdoc}
-     */
-    public function getByPostal(string $postal): array
-    {
-        $hash = sprintf('%s.%s', config('sepomex.table_name'), $postal);
+    public function getByPostal(string $postal): array {
+        $hash = sprintf('%s.postal.%s', config('sepomex.table_name'), $postal);
 
-        return $this->cache->tags(['sepomex'])->rememberForever($hash, function () use ($postal) {
-            return $this->next->getByPostal($postal);
-        });
+        return $this->cache->remember($hash, fn () => $this->next->getByPostal($postal));
     }
 
-    /**
-     * {@inheritdoc}
-     */
-    public function getStates(): array
-    {
+    public function getStates(): array {
         $hash = sprintf('%s.states', config('sepomex.table_name'));
 
-        return $this->cache->tags(['sepomex'])->rememberForever($hash, function () {
-            return $this->next->getStates();
-        });
+        return $this->cache->remember($hash, fn () => $this->next->getStates());
+    }
+
+    public function findSettlement(string $settlementKey): ?Settlement {
+        $hash = sprintf('%s.settlement.%s', config('sepomex.table_name'), $settlementKey);
+
+        return $this->cache->remember($hash, fn () => $this->next->findSettlement($settlementKey));
     }
 }
