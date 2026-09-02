@@ -19,5 +19,5 @@ jobs:
           extensions: json
           coverage: none
       - run: composer validate --no-check-publish
-      - run: composer install --no-interaction --prefer-dist
+      - run: composer update --no-interaction --prefer-dist
       - run: composer test
