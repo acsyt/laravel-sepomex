@@ -1,16 +1,14 @@
 {
-    "name": "wafto/laravel-sepomex",
+    "name": "acsyt/laravel-sepomex",
     "description": "Servicio Postal Mexicano (Sepomex) not official laravel library",
     "keywords": [
         "laravel",
         "sepomex",
-        "mexico",
-        "wafto"
+        "mexico"
     ],
     "license": "MIT",
     "support": {
-        "issues": "https://github.com/wafto/laravel-sepomex/issues",
-        "source": "https://github.com/wafto/laravel-sepomex"
+        "source": "https://github.com/acsyt/laravel-sepomex"
     },
     "type": "library",
     "authors": [
@@ -21,18 +19,17 @@
         }
     ],
     "require": {
-        "php": "^8.2",
+        "php": "^8.3",
         "ext-json": "*",
-        "illuminate/database": "^10.0|^11.0|^12.0",
-        "illuminate/http": "^10.0|^11.0|^12.0",
-        "illuminate/support": "^10.0|^11.0|^12.0"
+        "illuminate/database": "^13.23",
+        "illuminate/support": "^13.23"
     },
     "require-dev": {
         "laravel/pint": "^1.16",
-        "mockery/mockery": "^1.4",
-        "orchestra/testbench": "^8.23|^9.0|^10.0",
-        "pestphp/pest": "^3.0",
-        "phpunit/phpunit": "^10.0|^11.0"
+        "mockery/mockery": "^1.6",
+        "orchestra/testbench": "^11.0",
+        "pestphp/pest": "^4.0",
+        "phpunit/phpunit": "^12.5"
     },
     "autoload": {
         "psr-4": {
@@ -52,7 +49,10 @@
         "laravel": {
             "providers": [
                 "Wafto\\Sepomex\\SepomexServiceProvider"
-            ]
+            ],
+            "aliases": {
+                "Sepomex": "Wafto\\Sepomex\\Facades\\Sepomex"
+            }
         }
     },
     "config": {
@@ -61,6 +61,6 @@
             "pestphp/pest-plugin": true
         }
     },
-    "minimum-stability": "dev",
+    "minimum-stability": "stable",
     "prefer-stable": true
 }
