@@ -49,7 +49,7 @@ All entities implement `Arrayable` for easy serialization.
 
 ### Data Import
 
-The `sepomex:import` artisan command reads the SEPOMEX text file (pipe-delimited, iso-8859-1 encoded) and batch-inserts into the database. The `--chunk` option controls batch size.
+The `sepomex:import` artisan command reads the SEPOMEX text file (pipe-delimited, iso-8859-1 encoded) and upserts by `settlement_key`. Missing rows from a successful run are marked `is_active = false`. The `--chunk` option controls batch size. Do not persist autoincrement `id` as the external identity.
 
 ### Testing
 

@@ -1,144 +1,108 @@
 # Laravel Sepomex
 
-[![Total Downloads](https://poser.pugx.org/wafto/laravel-sepomex/downloads)](https://packagist.org/packages/wafto/laravel-sepomex)
-[![Latest Stable Version](https://poser.pugx.org/wafto/laravel-sepomex/v/stable)](https://packagist.org/packages/wafto/laravel-sepomex)
-[![License](https://poser.pugx.org/wafto/laravel-sepomex/license)](https://packagist.org/packages/wafto/laravel-sepomex)
-
-## Introduction
-
-Laravel Sepomex is a package that provides Mexican postal code ([SEPOMEX](https://www.correosdemexico.gob.mx)) lookup functionality for Laravel applications. It imports postal code data from the official "Correos de México" catalog and provides an API to query settlements by postal code or list all states.
+Internal Laravel package for the Mexican postal catalog ([SEPOMEX](https://www.correosdemexico.gob.mx) / Correos de México). Forked independently from [`wafto/laravel-sepomex`](https://github.com/wafto/laravel-sepomex); this repository is **not** a GitHub fork and is **not** published on Packagist.
 
 ## Requirements
 
-- PHP 8.2+
-- Laravel 10, 11, or 12
+- PHP 8.3+
+- Laravel 13
 
 ## Installation
 
-Install the package via Composer:
+Add the private VCS repository and require `^5.0`. Authentication stays in SSH or Composer `github-oauth` — never in `composer.json`.
+
+```json
+{
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "git@github.com:acsyt/laravel-sepomex.git"
+        }
+    ],
+    "require": {
+        "acsyt/laravel-sepomex": "^5.0"
+    }
+}
+```
 
 ```bash
-composer require wafto/laravel-sepomex
+composer update acsyt/laravel-sepomex
 ```
+
+Package discovery registers `Wafto\Sepomex\SepomexServiceProvider` automatically.
 
 ## Setup
 
-### 1. Publish Configuration
-
-Publish the `sepomex.php` configuration file:
+### 1. Publish configuration (optional)
 
 ```bash
 php artisan vendor:publish --provider="Wafto\Sepomex\SepomexServiceProvider"
 ```
 
-This will create a configuration file at `config/sepomex.php` where you can customize the `table_name` and `source_file` options.
+Customize `table_name` and `source_file` in `config/sepomex.php`.
 
-### 2. Download Source File
+### 2. Download the source file
 
-Download the official SEPOMEX catalog from [Correos de México](https://www.correosdemexico.gob.mx/SSLServicios/ConsultaCP/CodigoPostal_Exportar.aspx) and save it to your `storage` directory as `cpdescarga.txt`.
+Download the official catalog from [Correos de México](https://www.correosdemexico.gob.mx/SSLServicios/ConsultaCP/CodigoPostal_Exportar.aspx) and save it as `storage/cpdescarga.txt` (or the configured `source_file`). **Do not** commit that dump.
 
-The file path should match the `source_file` setting in your configuration.
-
-### 3. Run Migrations
-
-Run the database migrations to create the required table:
+### 3. Migrate
 
 ```bash
 php artisan migrate
 ```
 
-### 4. Import Data
-
-Import the postal code data using the artisan command:
+### 4. Import
 
 ```bash
 php artisan sepomex:import --chunk=50
 ```
 
-The `--chunk` option controls the batch size for database inserts. This process may take several minutes depending on your system.
+The command upserts by `settlement_key`. It does not truncate. Rows missing from a **successful** import are marked `is_active = false` so historical references stay resolvable.
 
-## Usage
+## Settlement identity
 
-### Using Dependency Injection (Recommended)
+Consumers must persist `settlement_key`, **not** the autoincrement `id`.
 
-Inject the `SepomexContract` interface into your controllers or services:
+```text
+{c_estado:02}-{c_mnpio:03}-{id_asenta_cpcons:04}
+```
+
+Example: `09-016-1838`. The key is derived from Correos fields that identify a settlement inside a municipality. Reimports keep the same key and the same internal `id`.
+
+## Query API
+
+Inject `Wafto\Sepomex\Contracts\SepomexContract` (or use the `Sepomex` facade).
+
+| Method | Behavior |
+|---|---|
+| `getByPostal(string $postal)` | Active settlements for that postal code |
+| `getStates()` | Distinct active states |
+| `findSettlement(string $settlementKey)` | One settlement by key, including inactive rows; `null` if missing |
 
 ```php
 use Wafto\Sepomex\Contracts\SepomexContract;
 
-class SepomexController extends Controller
-{
-    public function postal(SepomexContract $sepomex, string $postal)
-    {
-        return $sepomex->getByPostal($postal);
-    }
-
-    public function states(SepomexContract $sepomex)
-    {
-        return $sepomex->getStates();
-    }
-}
+$settlements = $sepomex->getByPostal('11590');
+$settlement = $sepomex->findSettlement($settlements[0]['settlement_key']);
 ```
 
-### Using the Facade
+`getByPostal` / `getStates` ignore inactive rows. `findSettlement` does not, so a stored key still loads after the catalog drops that settlement.
 
-Alternatively, register the Sepomex facade in `config/app.php`:
+## Cache
 
-```php
-'aliases' => [
-    // ...
-    'Sepomex' => Wafto\Sepomex\Facades\Sepomex::class,
-]
+Lookups are cached with tags when the cache store supports them (Redis, array, Memcached). File and database stores do not; the package then skips cache instead of calling `Cache::tags()`.
+
+## Tests
+
+```bash
+composer test
+composer pint
 ```
-
-Then use it anywhere in your application:
-
-```php
-use Sepomex;
-
-class SepomexController extends Controller
-{
-    public function postal(string $postal)
-    {
-        return Sepomex::getByPostal($postal);
-    }
-
-    public function states()
-    {
-        return Sepomex::getStates();
-    }
-}
-```
-
-### Using the Container
-
-You can also resolve the contract from the container:
-
-```php
-$sepomex = app(\Wafto\Sepomex\Contracts\SepomexContract::class);
-$settlements = $sepomex->getByPostal('06600');
-```
-
-## API Methods
-
-| Method | Description |
-|--------|-------------|
-| `getByPostal(string $postal)` | Returns all settlements matching the given postal code |
-| `getStates()` | Returns a list of all Mexican states |
-
-## Important Notes
-
-The database is distributed by Correos de México with the following clause:
-
-> *El Catálogo Nacional de Códigos Postales, es elaborado por Correos de México y se proporciona en forma gratuita para uso particular, no estando permitida su comercialización, total o parcial, ni su distribución a terceros bajo ningún concepto.*
-
-The database has also been released under the [LIBRE USO MX](https://datos.gob.mx/libreusomx) license.
-
-## Source
-
-> **"Catálogo Nacional de Códigos Postales"** publicado por Correos de México.
-> Disponible en [https://www.correosdemexico.gob.mx/SSLServicios/ConsultaCP/CodigoPostal_Exportar.aspx](https://www.correosdemexico.gob.mx/SSLServicios/ConsultaCP/CodigoPostal_Exportar.aspx)
 
 ## License
 
-Laravel Sepomex is open-sourced software licensed under the [MIT license](http://opensource.org/licenses/MIT).
+Package code is MIT. The catalog is produced by Correos de México:
+
+> *El Catálogo Nacional de Códigos Postales, es elaborado por Correos de México y se proporciona en forma gratuita para uso particular, no estando permitida su comercialización, total o parcial, ni su distribución a terceros bajo ningún concepto.*
+
+The database has also been released under [LIBRE USO MX](https://datos.gob.mx/libreusomx).
