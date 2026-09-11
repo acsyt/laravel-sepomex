@@ -11,6 +11,7 @@
         "source": "https://github.com/acsyt/laravel-sepomex"
     },
     "type": "library",
+    "version": "5.1.0",
     "authors": [
         {
             "name": "Aftab Hussain Miranda",
@@ -21,8 +22,11 @@
     "require": {
         "php": "^8.3",
         "ext-json": "*",
+        "ext-zip": "*",
         "illuminate/database": "^13.23",
-        "illuminate/support": "^13.23"
+        "illuminate/support": "^13.23",
+        "symfony/browser-kit": "^8.1",
+        "symfony/http-client": "^8.1"
     },
     "require-dev": {
         "laravel/pint": "^1.16",

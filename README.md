@@ -39,11 +39,30 @@ Package discovery registers `Wafto\Sepomex\SepomexServiceProvider` automatically
 php artisan vendor:publish --provider="Wafto\Sepomex\SepomexServiceProvider"
 ```
 
-Customize `table_name` and `source_file` in `config/sepomex.php`.
+Customize `table_name` and `source_file` in `config/sepomex.php`. The default file is `storage/CPdescarga.txt`.
 
-### 2. Download the source file
+### 2. Sync the catalog
 
-Download the official catalog from [Correos de México](https://www.correosdemexico.gob.mx/SSLServicios/ConsultaCP/CodigoPostal_Exportar.aspx) and save it as `storage/cpdescarga.txt` (or the configured `source_file`). **Do not** commit that dump.
+Dispatch `Wafto\Sepomex\Jobs\SyncSepomexCatalog`. It downloads the official TXT from [Correos de México](https://www.correosdemexico.gob.mx/SSLServicios/ConsultaCP/CodigoPostal_Exportar.aspx), validates headers and `min_import_rows`, skips the import when the SHA-256 matches the current file (unless `force: true`), then upserts via `sepomex:import`. Manual download is no longer the only path. **Do not** commit that dump.
+
+```php
+use Wafto\Sepomex\Jobs\SyncSepomexCatalog;
+
+SyncSepomexCatalog::dispatch();
+SyncSepomexCatalog::dispatchSync();
+(new SyncSepomexCatalog(force: true))->handle(app(\Wafto\Sepomex\Contracts\CatalogDownloader::class));
+```
+
+Host schedule (elcaba):
+
+```php
+use Wafto\Sepomex\Jobs\SyncSepomexCatalog;
+
+$schedule->job(new SyncSepomexCatalog)
+    ->weeklyOn(0, '03:00')
+    ->timezone('America/Mexico_City')
+    ->withoutOverlapping();
+```
 
 ### 3. Migrate
 
@@ -51,13 +70,15 @@ Download the official catalog from [Correos de México](https://www.correosdemex
 php artisan migrate
 ```
 
-### 4. Import
+### 4. Import a local TXT
+
+If `storage/CPdescarga.txt` (or `source_file`) is already on disk:
 
 ```bash
 php artisan sepomex:import --chunk=50
 ```
 
-The command upserts by `settlement_key`. It does not truncate. Rows missing from a **successful** import are marked `is_active = false` so historical references stay resolvable.
+The command upserts by `settlement_key`. It does not truncate. Rows missing from a **successful** import are marked `is_active = false` so historical references stay resolvable. You can still download the catalog by hand and save it as `storage/CPdescarga.txt` when you only want a local import.
 
 ## Settlement identity
 

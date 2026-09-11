@@ -5,7 +5,10 @@ namespace Wafto\Sepomex;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Support\ServiceProvider;
 use Wafto\Sepomex\Console\ImporterCommand;
+use Wafto\Sepomex\Contracts\CatalogDownloader;
 use Wafto\Sepomex\Contracts\SepomexContract;
+use Wafto\Sepomex\Downloader\CorreosCatalogDownloader;
+use Wafto\Sepomex\Downloader\ForbiddenCatalogDownloader;
 use Wafto\Sepomex\Models\Sepomex;
 use Wafto\Sepomex\Repositories\CachedRepository;
 use Wafto\Sepomex\Repositories\DatabaseRepository;
@@ -21,7 +24,14 @@ class SepomexServiceProvider extends ServiceProvider {
     }
 
     public function register(): void {
-        $this->mergeConfigFrom(__DIR__.'/../config/sepomex.php', 'sepomex');
+        $this->mergeConfigFrom(__DIR__ . '/../config/sepomex.php', 'sepomex');
+
+        $this->app->singleton(
+            CatalogDownloader::class,
+            $this->app->environment('testing')
+                ? ForbiddenCatalogDownloader::class
+                : CorreosCatalogDownloader::class,
+        );
 
         $this->app->singleton(SepomexContract::class, function ($app) {
             return new CachedRepository(

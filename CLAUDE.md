@@ -49,7 +49,9 @@ All entities implement `Arrayable` for easy serialization.
 
 ### Data Import
 
-The `sepomex:import` artisan command reads the SEPOMEX text file (pipe-delimited, iso-8859-1 encoded) and upserts by `settlement_key`. Missing rows from a successful run are marked `is_active = false`. The `--chunk` option controls batch size. Do not persist autoincrement `id` as the external identity.
+`Wafto\Sepomex\Jobs\SyncSepomexCatalog` (`ShouldQueue` + `ShouldBeUnique`) downloads the official catalog from Correos de México, validates headers and `min_import_rows`, skips when the SHA-256 is unchanged (unless `force`), then calls `sepomex:import`. There is no `sepomex:sync` command. In `testing`, `CatalogDownloader` is bound to `ForbiddenCatalogDownloader` so tests never hit Correos.
+
+The `sepomex:import` artisan command remains for a TXT already on disk (pipe-delimited, iso-8859-1 encoded) and upserts by `settlement_key`. Missing rows from a successful run are marked `is_active = false`. The `--chunk` option controls batch size. Do not persist autoincrement `id` as the external identity.
 
 ### Testing
 

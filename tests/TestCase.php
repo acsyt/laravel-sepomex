@@ -46,5 +46,6 @@ abstract class TestCase extends \Orchestra\Testbench\TestCase
         ]);
 
         $app['config']->set('sepomex.source_file', __DIR__.'/files/test.txt');
+        $app['config']->set('sepomex.min_import_rows', 10);
     }
 }
